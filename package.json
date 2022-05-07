@@ -1,4 +1,5 @@
 {
+  "version": "0.1.0",
   "name": "@evan/duckdb",
   "license": "Apache-2.0",
   "description": "lightning fast duckdb bindings for bun runtime",
@@ -7,6 +8,12 @@
     "type": "git",
     "url": "git://github.com/evanwashere/duckdb.git"
   },
+
+  "files": [
+    "bin/*",
+    "lib.mjs",
+    "index.mjs"
+  ],
 
   "devDependencies": {
     "duckdb": "^0.3.4",

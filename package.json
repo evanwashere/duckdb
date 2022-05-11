@@ -1,5 +1,5 @@
 {
-  "version": "0.1.0",
+  "version": "0.1.1",
   "name": "@evan/duckdb",
   "license": "Apache-2.0",
   "description": "lightning fast duckdb bindings for bun runtime",
@@ -17,7 +17,7 @@
 
   "devDependencies": {
     "duckdb": "^0.3.4",
-    "mitata": "^0.0.10",
+    "mitata": "^0.0.14",
     "postgres": "^3.1.0",
     "better-sqlite3": "^7.5.1"
   }

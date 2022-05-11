@@ -9,12 +9,16 @@ const path = {
 }[process.platform]().pathname;
 
 const duck = dlopen(path, {
+  duckffi_dfree: { args: ['ptr'], returns: 'void' },
   duckffi_close: { args: ['ptr'], returns: 'void' },
   duckffi_connect: { args: ['ptr'], returns: 'ptr' },
   duckffi_row_count: { args: ['ptr'], returns: 'u32' },
+  duckffi_enum_size: { args: ['ptr'], returns: 'u32' },
+  duckffi_enum_type: { args: ['ptr'], returns: 'u32' },
   duckffi_blob_size: { args: ['ptr'], returns: 'u32' },
   duckffi_blob_data: { args: ['ptr'], returns: 'ptr' },
   duckffi_free_blob: { args: ['ptr'], returns: 'void' },
+  duckffi_free_ltype: { args: ['ptr'], returns: 'void' },
   duckffi_disconnect: { args: ['ptr'], returns: 'void' },
   duckffi_param_count: { args: ['ptr'], returns: 'u32' },
   duckffi_open: { args: ['bool', 'ptr'], returns: 'ptr' },
@@ -29,8 +33,10 @@ const duck = dlopen(path, {
   duckffi_query_prepared: { args: ['ptr'], returns: 'ptr' },
   duckffi_row_count_large: { args: ['ptr'], returns: 'bool' },
   duckffi_param_type: { args: ['ptr', 'u32'], returns: 'u32' },
+  duckffi_enum_string: { args: ['ptr', 'u32'], returns: 'ptr' },
   duckffi_column_name: { args: ['ptr', 'u32'], returns: 'ptr' },
   duckffi_column_type: { args: ['ptr', 'u32'], returns: 'u32' },
+  duckffi_column_ltype: { args: ['ptr', 'u32'], returns: 'ptr' },
 
   duckffi_bind_null: { args: ['ptr', 'u32'], returns: 'bool' },
   duckffi_bind_u8: { args: ['ptr', 'u32', 'u8'], returns: 'bool' },
@@ -145,86 +151,129 @@ const _t = {
 };
 
 const _tr = Object.fromEntries(Object.entries(_t).map(([k, v]) => [v, k]));
-
 const blob_gc = new FinalizationRegistry(ptr => duck.duckffi_free_blob(ptr));
+const ltype_gc = new FinalizationRegistry(ptr => duck.duckffi_free_ltype(ptr));
 const result_gc = new FinalizationRegistry(ptr => duck.duckffi_free_result(ptr));
 const prepare_gc = new FinalizationRegistry(ptr => duck.duckffi_free_prepare(ptr));
 
 const _tm = {
-  [_t.time](r, row, column) { return duck.duckffi_value_time(r, row, column); },
-  [_t.float](r, row, column) { return duck.duckffi_value_f32(r, row, column); },
-  [_t.double](r, row, column) { return duck.duckffi_value_f64(r, row, column); },
-  [_t.bigint](r, row, column) { return duck.duckffi_value_i64(r, row, column); },
-  [_t.tinyint](r, row, column) { return duck.duckffi_value_i8(r, row, column); },
-  [_t.ubigint](r, row, column) { return duck.duckffi_value_u64(r, row, column); },
-  [_t.integer](r, row, column) { return duck.duckffi_value_i32(r, row, column); },
-  [_t.utinyint](r, row, column) { return duck.duckffi_value_u8(r, row, column); },
-  [_t.smallint](r, row, column) { return duck.duckffi_value_i16(r, row, column); },
-  [_t.uinteger](r, row, column) { return duck.duckffi_value_u32(r, row, column); },
-  [_t.usmallint](r, row, column) { return duck.duckffi_value_u16(r, row, column); },
-  [_t.boolean](r, row, column) { return duck.duckffi_value_boolean(r, row, column); },
-  [_t.timestamp](r, row, column) { return duck.duckffi_value_timestamp_ms(r, row, column); },
-  [_t.varchar](r, row, column) { return new CString(duck.duckffi_value_string(r, row, column)); },
-  [_t.date](r, row, column) { return 24 * 60 * 60 * 1000 * duck.duckffi_value_date(r, row, column); },
+  [_t.time](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_time(r, row, column); },
+  [_t.float](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_f32(r, row, column); },
+  [_t.double](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_f64(r, row, column); },
+  [_t.bigint](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_i64(r, row, column); },
+  [_t.tinyint](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_i8(r, row, column); },
+  [_t.ubigint](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_u64(r, row, column); },
+  [_t.integer](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_i32(r, row, column); },
+  [_t.utinyint](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_u8(r, row, column); },
+  [_t.smallint](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_i16(r, row, column); },
+  [_t.uinteger](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_u32(r, row, column); },
+  [_t.usmallint](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_u16(r, row, column); },
+  [_t.boolean](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_boolean(r, row, column); },
+  [_t.timestamp](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_timestamp_ms(r, row, column); },
+  [_t.varchar](r, _ltypes, _column) { return (row, column) => new CString(duck.duckffi_value_string(r, row, column)); },
+  [_t.date](r, _ltypes, _column) { return (row, column) => 24 * 60 * 60 * 1000 * duck.duckffi_value_date(r, row, column); },
 
-  [_t.blob](r, row, column) {
-    const blob = duck.duckffi_value_blob(r, row, column);
+  [_t.blob](r, _ltypes, _column) {
+    return (row, column) => {
+      const blob = duck.duckffi_value_blob(r, row, column);
+      const ab = toArrayBuffer(duck.duckffi_blob_data(blob), 0, duck.duckffi_blob_size(blob));
 
-    const size = duck.duckffi_blob_size(blob);
-    const data = duck.duckffi_blob_data(blob);
-    const ab = toArrayBuffer(data, 0, size);
-    return (blob_gc.register(ab, blob), new Uint8Array(ab));
+      return (blob_gc.register(ab, blob), new Uint8Array(ab));
+    };
   },
 
-  [_t.interval](r, row, column) {
-    const ms = duck.duckffi_value_interval_days(r, row, column);
+  [_t.interval](r, _ltypes, _column) {
+    return (row, column) => {
+      const ms = duck.duckffi_value_interval_days(r, row, column);
 
-    const days = (ms / (24 * 60 * 60 * 1000)) | 0;
+      const days = (ms / (24 * 60 * 60 * 1000)) | 0;
 
-    return {
-      days: days,
-      ms: ms - days * (24 * 60 * 60 * 1000),
-      months: duck.duckffi_value_interval_months(r, row, column),
+      return {
+        days: days,
+        ms: ms - days * (24 * 60 * 60 * 1000),
+        months: duck.duckffi_value_interval_months(r, row, column),
+      };
+    };
+  },
+
+  [_t.enum](r, ltypes, _column) {
+    const ltype = ltypes[_column] = duck.duckffi_column_ltype(r, _column);
+
+    const names = new Array(duck.duckffi_enum_size(ltype));
+    const tf = _tm[duck.duckffi_enum_type(ltype)](r, ltypes, _column);
+
+    return (row, column) => {
+      const offset = tf(row, column);
+
+      let name = names[offset];
+
+      if (name === undefined) {
+        const s = duck.duckffi_enum_string(ltype, offset);
+        name = names[offset] = new CString(s); duck.duckffi_dfree(name.ptr);
+      }
+
+      return name;
     };
   },
 };
 
 const _tms = {
-  [_t.time](r, row, column) { return duck.duckffi_value_time_slow(r, row, column); },
-  [_t.float](r, row, column) { return duck.duckffi_value_f32_slow(r, row, column); },
-  [_t.double](r, row, column) { return duck.duckffi_value_f64_slow(r, row, column); },
-  [_t.tinyint](r, row, column) { return duck.duckffi_value_i8_slow(r, row, column); },
-  [_t.bigint](r, row, column) { return duck.duckffi_value_i64_slow(r, row, column); },
-  [_t.ubigint](r, row, column) { return duck.duckffi_value_u64_slow(r, row, column); },
-  [_t.integer](r, row, column) { return duck.duckffi_value_i32_slow(r, row, column); },
-  [_t.utinyint](r, row, column) { return duck.duckffi_value_u8_slow(r, row, column); },
-  [_t.smallint](r, row, column) { return duck.duckffi_value_i16_slow(r, row, column); },
-  [_t.uinteger](r, row, column) { return duck.duckffi_value_u32_slow(r, row, column); },
-  [_t.usmallint](r, row, column) { return duck.duckffi_value_u16_slow(r, row, column); },
-  [_t.boolean](r, row, column) { return duck.duckffi_value_boolean_slow(r, row, column); },
-  [_t.interval](r, row, column) { return duck.duckffi_value_interval_slow(r, row, column); },
-  [_t.timestamp](r, row, column) { return duck.duckffi_value_timestamp_ms_slow(r, row, column); },
-  [_t.varchar](r, row, column) { return new CString(duck.duckffi_value_string_slow(r, row, column)); },
-  [_t.date](r, row, column) { return 24 * 60 * 60 * 1000 * duck.duckffi_value_date_slow(r, row, column); },
+  [_t.time](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_time_slow(r, row, column); },
+  [_t.float](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_f32_slow(r, row, column); },
+  [_t.double](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_f64_slow(r, row, column); },
+  [_t.bigint](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_i64_slow(r, row, column); },
+  [_t.tinyint](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_i8_slow(r, row, column); },
+  [_t.ubigint](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_u64_slow(r, row, column); },
+  [_t.integer](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_i32_slow(r, row, column); },
+  [_t.utinyint](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_u8_slow(r, row, column); },
+  [_t.smallint](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_i16_slow(r, row, column); },
+  [_t.uinteger](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_u32_slow(r, row, column); },
+  [_t.usmallint](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_u16_slow(r, row, column); },
+  [_t.boolean](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_boolean_slow(r, row, column); },
+  [_t.timestamp](r, _ltypes, _column) { return (row, column) => duck.duckffi_value_timestamp_ms_slow(r, row, column); },
+  [_t.varchar](r, _ltypes, _column) { return (row, column) => new CString(duck.duckffi_value_string_slow(r, row, column)); },
+  [_t.date](r, _ltypes, _column) { return (row, column) => 24 * 60 * 60 * 1000 * duck.duckffi_value_date_slow(r, row, column); },
 
-  [_t.blob](r, row, column) {
-    const blob = duck.duckffi_value_blob_slow(r, row, column);
+  [_t.blob](r, _ltypes, _column) {
+    return (row, column) => {
+      const blob = duck.duckffi_value_blob_slow(r, row, column);
+      const ab = toArrayBuffer(duck.duckffi_blob_data(blob), 0, duck.duckffi_blob_size(blob));
 
-    const size = duck.duckffi_blob_size(blob);
-    const data = duck.duckffi_blob_data(blob);
-    const ab = toArrayBuffer(data, 0, size);
-    return (blob_gc.register(ab, blob), new Uint8Array(ab));
+      return (blob_gc.register(ab, blob), new Uint8Array(ab));
+    };
   },
 
-  [_t.interval](r, row, column) {
-    const ms = duck.duckffi_value_interval_days_slow(r, row, column);
+  [_t.interval](r, _ltypes, _column) {
+    return (row, column) => {
+      const ms = duck.duckffi_value_interval_days_slow(r, row, column);
 
-    const days = (ms / (24 * 60 * 60 * 1000)) | 0;
+      const days = (ms / (24 * 60 * 60 * 1000)) | 0;
 
-    return {
-      days: days,
-      ms: ms - days * (24 * 60 * 60 * 1000),
-      months: duck.duckffi_value_interval_months_slow(r, row, column),
+      return {
+        days: days,
+        ms: ms - days * (24 * 60 * 60 * 1000),
+        months: duck.duckffi_value_interval_months_slow(r, row, column),
+      };
+    };
+  },
+
+  [_t.enum](r, ltypes, _column) {
+    const ltype = ltypes[_column] = duck.duckffi_column_ltype(r, _column);
+
+    const names = new Array(duck.duckffi_enum_size(ltype));
+    const tf = _tms[duck.duckffi_enum_type(ltype)](r, ltypes, _column);
+
+    return (row, column) => {
+      const offset = tf(row, column);
+
+      let name = names[offset];
+
+      if (name === undefined) {
+        const s = duck.duckffi_enum_string(ltype, offset);
+        name = names[offset] = new CString(s); duck.duckffi_dfree(name.ptr);
+      }
+
+      return name;
     };
   },
 };
@@ -241,17 +290,18 @@ export function query(c, query) {
     }
   }
 
+  const rows = duck.duckffi_row_count(r);
+  const columns = duck.duckffi_column_count(r);
+
+  const a = new Array(rows);
+  const names = new Array(columns);
+  const types = new Array(columns);
+  const ltypes = new Array(columns);
+
   try {
-    const rows = duck.duckffi_row_count(r);
-    const columns = duck.duckffi_column_count(r);
-
-    const a = new Array(rows);
-    const names = new Array(columns);
-    const types = new Array(columns);
-
     for (let offset = 0; offset < columns; offset++) {
-      types[offset] = duck.duckffi_column_type(r, offset);
       names[offset] = new CString(duck.duckffi_column_name(r, offset));
+      types[offset] = _tm[duck.duckffi_column_type(r, offset)](r, ltypes, offset);
     }
 
     for (let offset = 0; rows > offset; offset++) {
@@ -261,13 +311,20 @@ export function query(c, query) {
         if (duck.duckffi_value_is_null(r, offset, column)) {
           row[names[column]] = null;
         } else {
-          row[names[column]] = _tm[types[column]](r, offset, column);
+          row[names[column]] = types[column](offset, column);
         }
       }
     }
 
     return a;
   } finally {
+    const len = ltypes.length;
+
+    for (let offset = 0; len > offset; offset++) {
+      const x = ltypes[offset];
+      if (x) duck.duckffi_free_ltype(x);
+    }
+
     duck.duckffi_free_result(r);
   }
 }
@@ -291,10 +348,18 @@ export function* stream(c, query) {
 
   const names = new Array(columns);
   const types = new Array(columns);
+  const ltypes = new Array(columns);
 
   for (let offset = 0; offset < columns; offset++) {
-    types[offset] = duck.duckffi_column_type(r, offset);
     names[offset] = new CString(duck.duckffi_column_name(r, offset));
+    types[offset] = (!slow ? _tm : _tms)[duck.duckffi_column_type(r, offset)](r, ltypes, offset);
+  }
+
+  const len = ltypes.length;
+
+  for (let offset = 0; len > offset; offset++) {
+    const ltype = ltypes[offset];
+    if (ltype) ltype_gc.register(t, ltype, t);
   }
 
   if (!slow) {
@@ -307,7 +372,7 @@ export function* stream(c, query) {
         if (duck.duckffi_value_is_null(r, offset, column)) {
           row[names[column]] = null;
         } else {
-          row[names[column]] = _tm[types[column]](r, offset, column);
+          row[names[column]] = types[column](offset, column);
         }
       }
 
@@ -323,7 +388,7 @@ export function* stream(c, query) {
         if (duck.duckffi_value_is_null_slow(r, offset, column)) {
           row[names[column]] = null;
         } else {
-          row[names[column]] = _tms[types[column]](r, offset, column);
+          row[names[column]] = types[column](offset, column);
         }
       }
 
@@ -331,11 +396,18 @@ export function* stream(c, query) {
     }
   }
 
-  duck.duckffi_free_result(r);
+  for (let offset = 0; len > offset; offset++) {
+    const x = ltypes[offset];
+    if (x) duck.duckffi_free_ltype(x);
+  }
+
+  ltype_gc.unregister(t);
   result_gc.unregister(t);
+  duck.duckffi_free_result(r);
 }
 
 const _trm = {
+  [_t.enum](n, offset) { return _trm[_t.varchar](n, offset); },
   [_t.time](n, offset) { return `if (type === 'string') { ${_trm[_t.varchar](n, offset)} } else { ${_trm[_t.timestamp](n, offset)} }`; },
   [_t.date](n, offset) { return `if (type === 'string') { ${_trm[_t.varchar](n, offset)} } else { ${_trm[_t.timestamp](n, offset)} }`; },
   [_t.float](n, offset) { return `if (duck.duckffi_bind_f32(p, ${offset}, ${n})) throw new Error('failed to bind float at ${offset}');`; },
@@ -371,6 +443,7 @@ const _trm = {
 };
 
 const _trmc = {
+  [_t.enum](n) { return `(type === 'string')`; },
   [_t.float](n) { return `(type === 'number')`; },
   [_t.double](n) { return `(type === 'number')`; },
   [_t.varchar](n) { return `(type === 'string')`; },
@@ -439,19 +512,22 @@ export function prepare(c, query) {
       }
     }
 
+    const rows = duck.duckffi_row_count(r);
+    const columns = duck.duckffi_column_count(r);
+
+    const a = new Array(rows);
+    const names = new Array(columns);
+    const types = new Array(columns);
+    const ltypes = new Array(columns);
+    const typesfn = new Array(columns);
+
+    for (let offset = 0; offset < columns; offset++) {
+      types[offset] = duck.duckffi_column_type(r, offset);
+      typesfn[offset] = _tm[types[offset]](r, ltypes, offset);
+      names[offset] = new CString(duck.duckffi_column_name(r, offset));
+    }
+
     try {
-      const rows = duck.duckffi_row_count(r);
-      const columns = duck.duckffi_column_count(r);
-
-      const a = new Array(rows);
-      const names = new Array(columns);
-      const types = new Array(columns);
-
-      for (let offset = 0; offset < columns; offset++) {
-        types[offset] = duck.duckffi_column_type(r, offset);
-        names[offset] = new CString(duck.duckffi_column_name(r, offset));
-      }
-
       {
         ctx.query = new Function(${names.map(n => `'${n}', `).join('')} \`
           const { ptr, CString } = Bun.FFI;
@@ -478,8 +554,10 @@ export function prepare(c, query) {
             }
           }
 
-          \${[...new Set(types)].map(type => \`
-            const _tm_\${type} = _tm[\${type}];
+          const ltypes = new Array(\${ltypes.length});
+
+          \${types.map((type, column) => \`
+            const _tm_\${column}_\${type} = _tm[\${type}](r, ltypes, \${column});
           \`).join('\\n')}
 
           try {
@@ -490,13 +568,18 @@ export function prepare(c, query) {
             for (let offset = 0; rows > offset; offset++) {
               a[offset] = {
                 \${names.map((name, column) => \`
-                  "\${name}": duck.duckffi_value_is_null(r, offset, \${column}) ? null : _tm_\${types[column]}(r, offset, \${column}),
+                  "\${name}": duck.duckffi_value_is_null(r, offset, \${column}) ? null : _tm_\${column}_\${types[column]}(offset, \${column}),
                 \`.trim()).join('\\n')}
               };
             }
 
             return a;
           } finally {
+            for (let offset = 0; \${ltypes.length} > offset; offset++) {
+              const x = ltypes[offset];
+              if (x) duck.duckffi_free_ltype(x);
+            }
+
             duck.duckffi_free_result(r);
           }
         \`).bind({ p, _tm, ctx, duck, utf8e });
@@ -504,19 +587,26 @@ export function prepare(c, query) {
 
       for (let offset = 0; rows > offset; offset++) {
         const row = a[offset] = {};
-  
+
         for (let column = 0; column < columns; column++) {
           if (duck.duckffi_value_is_null(r, offset, column)) {
             row[names[column]] = null;
           } else {
-            row[names[column]] = _tm[types[column]](r, offset, column);
+            row[names[column]] = typesfn[column](offset, column);
           }
         }
       }
-  
+
       return a;
     } finally {
-      if (r) duck.duckffi_free_result(r);
+      const len = ltypes.length;
+
+      for (let offset = 0; len > offset; offset++) {
+        const x = ltypes[offset];
+        if (x) duck.duckffi_free_ltype(x);
+      }
+
+      duck.duckffi_free_result(r);
     }
   `).bind({ p, _tm, ctx, duck, utf8e });
 
@@ -525,7 +615,7 @@ export function prepare(c, query) {
   ctx.stream = new GeneratorFunction(...names, `
     const { ptr, CString } = Bun.FFI;
     const GeneratorFunction = (function* () { }).constructor;
-    const { p, _tm, ctx, _tms, duck, utf8e, result_gc } = this;
+    const { p, _tm, ctx, _tms, duck, utf8e, ltype_gc, result_gc } = this;
 
     ${names.map((name, offset) => `
       if (null === ${name}) duck.duckffi_bind_null(p, ${offset});
@@ -551,22 +641,32 @@ export function prepare(c, query) {
       }
     }
 
+    const slow = duck.duckffi_row_count_large(r);
+    const columns = duck.duckffi_column_count(r);
+
+    const names = new Array(columns);
+    const types = new Array(columns);
+    const ltypes = new Array(columns);
+    const typesfn = new Array(columns);
+
+    for (let offset = 0; offset < columns; offset++) {
+      types[offset] = duck.duckffi_column_type(r, offset);
+      names[offset] = new CString(duck.duckffi_column_name(r, offset));
+      typesfn[offset] = (!slow ? _tm : _tms)[types[offset]](r, ltypes, offset);
+    }
+
+    const len = ltypes.length;
+
+    for (let offset = 0; len > offset; offset++) {
+      const x = ltypes[offset];
+      if (x) ltype_gc.register(t, x, t);
+    }
+
     try {
-      const slow = duck.duckffi_row_count_large(r);
-      const columns = duck.duckffi_column_count(r);
-
-      const names = new Array(columns);
-      const types = new Array(columns);
-
-      for (let offset = 0; offset < columns; offset++) {
-        types[offset] = duck.duckffi_column_type(r, offset);
-        names[offset] = new CString(duck.duckffi_column_name(r, offset));
-      }
-
       {
-        ctx.query = new GeneratorFunction(${names.map(n => `'${n}', `).join('')} \`
+        ctx.stream = new GeneratorFunction(${names.map(n => `'${n}', `).join('')} \`
           const { ptr, CString } = Bun.FFI;
-          const { p, _tm, _tms, duck, utf8e, result_gc } = this;
+          const { p, _tm, _tms, duck, utf8e, ltype_gc, result_gc } = this;
 
           ${names.map((name, offset) => `
             if (null === ${name}) duck.duckffi_bind_null(p, ${offset});
@@ -591,43 +691,60 @@ export function prepare(c, query) {
 
           const t = {};
           result_gc.register(t, r, t);
+          const ltypes = new Array(\${len});
           const slow = duck.duckffi_row_count_large(r);
 
           try {
             if (!slow) {
               const rows = duck.duckffi_row_count(r);
 
-              \${[...new Set(types)].map(type => \`
-                const _tm_\${type} = _tm[\${type}];
+              \${types.map((type, column) => \`
+                const _tm_\${column}_\${type} = _tm[\${type}](r, ltypes, \${column});
               \`).join('\\n')}
+
+              for (let offset = 0; \${len} > offset; offset++) {
+                const x = ltypes[offset];
+                if (x) ltype_gc.register(t, x, t);
+              }
 
               for (let offset = 0; rows > offset; offset++) {
                 yield {
                   \${names.map((name, column) => \`
-                    "\${name}": duck.duckffi_value_is_null(r, offset, \${column}) ? null : _tm_\${types[column]}(r, offset, \${column}),
+                    "\${name}": duck.duckffi_value_is_null(r, offset, \${column}) ? null : _tm_\${column}_\${types[column]}(offset, \${column}),
                   \`.trim()).join('\\n')}
                 };
               }
             } else {
               const rows = duck.duckffi_row_count_slow(r);
 
-              \${[...new Set(types)].map(type => \`
-                const _tms_\${type} = _tms[\${type}];
+              \${types.map((type, column) => \`
+                const _tms_\${column}_\${type} = _tms[\${type}](r, ltypes, \${column});
               \`).join('\\n')}
+
+              for (let offset = 0; \${len} > offset; offset++) {
+                const x = ltypes[offset];
+                if (x) ltype_gc.register(t, x, t);
+              }
 
               for (let offset = 0n; rows > offset; offset++) {
                 yield {
                   \${names.map((name, column) => \`
-                    "\${name}": duck.duckffi_value_is_null_slow(r, offset, \${column}) ? null : _tms_\${types[column]}(r, offset, \${column}),
+                    "\${name}": duck.duckffi_value_is_null_slow(r, offset, \${column}) ? null : _tms_\${column}_\${types[column]}(offset, \${column}),
                   \`.trim()).join('\\n')}
                 };
               }
             }
           } finally {
-            duck.duckffi_free_result(r);
+            for (let offset = 0; \${len} > offset; offset++) {
+              const x = ltypes[offset];
+              if (x) duck.duckffi_free_ltype(x);
+            }
+
+            ltype_gc.unregister(t);
             result_gc.unregister(t);
+            duck.duckffi_free_result(r);
           }
-        \`).bind({ p, _tm, ctx, _tms, duck, utf8e, result_gc });
+        \`).bind({ p, _tm, ctx, _tms, duck, utf8e, ltype_gc, result_gc });
       }
 
       if (!slow) {
@@ -640,7 +757,7 @@ export function prepare(c, query) {
             if (duck.duckffi_value_is_null(r, offset, column)) {
               row[names[column]] = null;
             } else {
-              row[names[column]] = _tm[types[column]](r, offset, column);
+              row[names[column]] = typesfn[column](offset, column);
             }
           }
 
@@ -656,7 +773,7 @@ export function prepare(c, query) {
             if (duck.duckffi_value_is_null_slow(r, offset, column)) {
               row[names[column]] = null;
             } else {
-              row[names[column]] = _tms[types[column]](r, offset, column);
+              row[names[column]] = typesfn[column](offset, column);
             }
           }
 
@@ -664,10 +781,16 @@ export function prepare(c, query) {
         }
       }
     } finally {
-      duck.duckffi_free_result(r);
+      for (let offset = 0; len > offset; offset++) {
+        const x = ltypes[offset];
+        if (x) duck.duckffi_free_ltype(x);
+      }
+
+      ltype_gc.unregister(t);
       result_gc.unregister(t);
+      duck.duckffi_free_result(r);
     }
-  `).bind({ p, _tm, ctx, _tms, duck, utf8e, result_gc });
+  `).bind({ p, _tm, ctx, _tms, duck, utf8e, ltype_gc, result_gc });
 
   return ctx;
 }

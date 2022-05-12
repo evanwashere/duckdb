@@ -1,6 +1,8 @@
+#include <math.h>
 #include <duckdb.h>
 #include <string.h>
 
+void duckffi_free(void* ptr) { free(ptr); }
 void duckffi_dfree(void* ptr) { duckdb_free(ptr); }
 void duckffi_free_blob(duckdb_blob* blob) { duckdb_free(blob->data); free(blob); }
 void duckffi_close(duckdb_database db) { duckdb_database d = db; duckdb_close(&d); }
@@ -117,4 +119,16 @@ duckdb_blob* duckffi_value_blob_slow(duckdb_result* result, uint64_t row, uint32
   memcpy(blob, &stack, sizeof(duckdb_blob));
 
   return blob;
+}
+
+uint8_t* duckffi_null_bitmap(duckdb_result* result, uint32_t rows, uint32_t column) {
+  uint8_t* bitmap = (uint8_t*)malloc(ceilf(rows / 8.0));
+
+  for (uint32_t row = 0; row < rows; row++) {
+    if (duckdb_value_is_null(result, column, row)) {
+      bitmap[row / 8] |= (1 << (row % 8));
+    }
+  }
+
+  return bitmap;
 }

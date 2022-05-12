@@ -1,5 +1,6 @@
 #include <duckdb.h>
 
+void duckffi_free(void *ptr);
 void duckffi_dfree(void *ptr);
 void duckffi_close(duckdb_database db);
 void duckffi_free_blob(duckdb_blob* blob);
@@ -87,3 +88,5 @@ duckdb_blob* duckffi_value_blob_slow(duckdb_result* result, uint64_t row, uint32
 uint64_t duckffi_value_timestamp_ms_slow(duckdb_result* result, uint64_t row, uint32_t column);
 uint32_t duckffi_value_interval_days_slow(duckdb_result* result, uint64_t row, uint32_t column);
 uint32_t duckffi_value_interval_months_slow(duckdb_result* result, uint64_t row, uint32_t column);
+
+uint8_t* duckffi_null_bitmap(duckdb_result* result, uint32_t rows, uint32_t column);

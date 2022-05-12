@@ -9,6 +9,7 @@ const path = {
 }[process.platform]().pathname;
 
 const duck = dlopen(path, {
+  duckffi_free: { args: ['ptr'], returns: 'void' },
   duckffi_dfree: { args: ['ptr'], returns: 'void' },
   duckffi_close: { args: ['ptr'], returns: 'void' },
   duckffi_connect: { args: ['ptr'], returns: 'ptr' },
@@ -37,6 +38,7 @@ const duck = dlopen(path, {
   duckffi_column_name: { args: ['ptr', 'u32'], returns: 'ptr' },
   duckffi_column_type: { args: ['ptr', 'u32'], returns: 'u32' },
   duckffi_column_ltype: { args: ['ptr', 'u32'], returns: 'ptr' },
+  duckffi_null_bitmap: { args: ['ptr', 'u32', 'u32'], returns: 'ptr' },
 
   duckffi_bind_null: { args: ['ptr', 'u32'], returns: 'bool' },
   duckffi_bind_u8: { args: ['ptr', 'u32', 'u8'], returns: 'bool' },
@@ -103,6 +105,10 @@ export function close(db) {
 
 export function disconnect(c) {
   duck.duckffi_disconnect(c);
+}
+
+function bitmap_get(buf, offset) {
+  return buf[(offset / 8) | 0] >> (offset % 8) & 1;
 }
 
 export function connect(db) {
@@ -294,21 +300,25 @@ export function query(c, query) {
   const columns = duck.duckffi_column_count(r);
 
   const a = new Array(rows);
+  const nulls = new Array(columns);
   const names = new Array(columns);
   const types = new Array(columns);
+  const nullsv = new Array(columns);
   const ltypes = new Array(columns);
 
-  try {
-    for (let offset = 0; offset < columns; offset++) {
-      names[offset] = new CString(duck.duckffi_column_name(r, offset));
-      types[offset] = _tm[duck.duckffi_column_type(r, offset)](r, ltypes, offset);
-    }
+  for (let offset = 0; offset < columns; offset++) {
+    nulls[offset] = duck.duckffi_null_bitmap(r, rows, offset);
+    names[offset] = new CString(duck.duckffi_column_name(r, offset));
+    types[offset] = _tm[duck.duckffi_column_type(r, offset)](r, ltypes, offset);
+    nullsv[offset] = new Uint8Array(toArrayBuffer(nulls[offset], 0, Math.ceil(rows / 8)));
+  }
 
+  try {
     for (let offset = 0; rows > offset; offset++) {
       const row = a[offset] = {};
 
       for (let column = 0; column < columns; column++) {
-        if (duck.duckffi_value_is_null(r, offset, column)) {
+        if (bitmap_get(nullsv[column], offset)) {
           row[names[column]] = null;
         } else {
           row[names[column]] = types[column](offset, column);
@@ -319,6 +329,10 @@ export function query(c, query) {
     return a;
   } finally {
     const len = ltypes.length;
+
+    for (let offset = 0; offset < columns; offset++) {
+      duck.duckffi_free(nulls[offset]);
+    }
 
     for (let offset = 0; len > offset; offset++) {
       const x = ltypes[offset];
@@ -476,7 +490,7 @@ export function prepare(c, query) {
   }
 
   const ctx = {};
-  prepare_gc.register(ctx, p);
+  prepare_gc.register(ctx, p, ctx);
   const len = duck.duckffi_param_count(p);
 
   const types = new Array(len);
@@ -487,9 +501,14 @@ export function prepare(c, query) {
     names[offset] = `$${offset}_${_tr[types[offset]]}`;
   }
 
+  ctx.close = () => {
+    prepare_gc.unregister(ctx);
+    duck.duckffi_free_prepare(p);
+  };
+
   ctx.query = new Function(...names, `
     const { ptr, CString } = Bun.FFI;
-    const { p, _tm, ctx, duck, utf8e } = this;
+    const { p, _tm, ctx, duck, utf8e, bitmap_get } = this;
 
     ${names.map((name, offset) => `
       if (null === ${name}) duck.duckffi_bind_null(p, ${offset});
@@ -530,8 +549,8 @@ export function prepare(c, query) {
     try {
       {
         ctx.query = new Function(${names.map(n => `'${n}', `).join('')} \`
-          const { ptr, CString } = Bun.FFI;
-          const { p, _tm, duck, utf8e } = this;
+          const { ptr, CString, toArrayBuffer } = Bun.FFI;
+          const { p, _tm, duck, utf8e, bitmap_get } = this;
 
           ${names.map((name, offset) => `
             if (null === ${name}) duck.duckffi_bind_null(p, ${offset});
@@ -554,21 +573,22 @@ export function prepare(c, query) {
             }
           }
 
+          const rows = duck.duckffi_row_count(r);
           const ltypes = new Array(\${ltypes.length});
 
           \${types.map((type, column) => \`
             const _tm_\${column}_\${type} = _tm[\${type}](r, ltypes, \${column});
+            const nulls_\${column} = duck.duckffi_null_bitmap(r, rows, \${column});
+            const nulls_view_\${column} = new Uint8Array(toArrayBuffer(nulls_\${column}, 0, Math.ceil(rows / 8)));
           \`).join('\\n')}
 
           try {
-            const rows = duck.duckffi_row_count(r);
-
             const a = new Array(rows);
 
             for (let offset = 0; rows > offset; offset++) {
               a[offset] = {
                 \${names.map((name, column) => \`
-                  "\${name}": duck.duckffi_value_is_null(r, offset, \${column}) ? null : _tm_\${column}_\${types[column]}(offset, \${column}),
+                  "\${name}": (bitmap_get(nulls_view_\${column}, offset)) ? null : _tm_\${column}_\${types[column]}(offset, \${column}),
                 \`.trim()).join('\\n')}
               };
             }
@@ -580,9 +600,13 @@ export function prepare(c, query) {
               if (x) duck.duckffi_free_ltype(x);
             }
 
+            \${new Array(columns).fill(0).map((_, column) => \`
+              duck.duckffi_free(nulls_\${column});
+            \`)}
+
             duck.duckffi_free_result(r);
           }
-        \`).bind({ p, _tm, ctx, duck, utf8e });
+        \`).bind({ p, _tm, ctx, duck, utf8e, bitmap_get });
       }
 
       for (let offset = 0; rows > offset; offset++) {
@@ -608,7 +632,7 @@ export function prepare(c, query) {
 
       duck.duckffi_free_result(r);
     }
-  `).bind({ p, _tm, ctx, duck, utf8e });
+  `).bind({ p, _tm, ctx, duck, utf8e, bitmap_get });
 
 
 

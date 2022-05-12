@@ -10,7 +10,7 @@
 ## Features
 - 🔋 batteries included
 - 🚀 jit optimized bindings
-- 🐇 4x faster than node & deno
+- 🐇 2-6x faster than node & deno
 
 <br />
 

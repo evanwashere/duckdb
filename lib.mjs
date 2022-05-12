@@ -298,6 +298,7 @@ export function query(c, query) {
 
   const rows = duck.duckffi_row_count(r);
   const columns = duck.duckffi_column_count(r);
+  if (0 === rows) return (duck.duckffi_free_result(r), []);
 
   const a = new Array(rows);
   const nulls = new Array(columns);
@@ -575,6 +576,7 @@ export function prepare(c, query) {
 
           const rows = duck.duckffi_row_count(r);
           const ltypes = new Array(\${ltypes.length});
+          if (0 === rows) return (duck.duckffi_free_result(r), []);
 
           \${types.map((type, column) => \`
             const _tm_\${column}_\${type} = _tm[\${type}](r, ltypes, \${column});
@@ -602,7 +604,7 @@ export function prepare(c, query) {
 
             \${new Array(columns).fill(0).map((_, column) => \`
               duck.duckffi_free(nulls_\${column});
-            \`)}
+            \`).join('\\n')}
 
             duck.duckffi_free_result(r);
           }

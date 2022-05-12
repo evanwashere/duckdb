@@ -1,5 +1,5 @@
 {
-  "version": "0.1.1",
+  "version": "0.1.2",
   "name": "@evan/duckdb",
   "license": "Apache-2.0",
   "description": "lightning fast duckdb bindings for bun runtime",

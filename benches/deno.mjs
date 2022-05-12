@@ -9,7 +9,7 @@ WITH RECURSIVE c(x) AS (
   UNION ALL
   SELECT x+1 FROM c WHERE x<100000
 )
-SELECT x FROM c;
+SELECT x, x as a FROM c;
 `);
 
 bench('sqlite', () => {

@@ -7,7 +7,7 @@ import { run, bench } from 'mitata';
 const db = new duckdb.Database('/tmp/test.db');
 const post = postgres({ database: 'postgres' });
 
-const q = 'select i from generate_series(1, 100000) s(i)';
+const q = 'select i, i as a from generate_series(1, 100000) s(i)';
 
 const qlite = `
 WITH RECURSIVE c(x) AS (
@@ -15,7 +15,7 @@ WITH RECURSIVE c(x) AS (
   UNION ALL
   SELECT x+1 FROM c WHERE x<100000
 )
-SELECT x FROM c;
+SELECT x, x as a FROM c;
 `;
 
 const p = db.prepare(q);
@@ -27,7 +27,7 @@ bench('duckdb', async () => {
 });
 
 bench('postgres', async () => {
-  await post`select i from generate_series(1, 100000) s(i)`;
+  await post`select i, i as a from generate_series(1, 100000) s(i)`;
 });
 
 const dblite = better('/tmp/test-sqlite.db');

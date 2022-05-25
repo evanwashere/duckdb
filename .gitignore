@@ -1,6 +1,5 @@
 bin/
 .vscode/
 bun.lockb
-libsql.dylib
 node_modules/
 package-lock.json

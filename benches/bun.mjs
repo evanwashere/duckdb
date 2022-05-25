@@ -1,13 +1,12 @@
+import { open } from '..';
 import { run, bench } from 'mitata';
-import { open, close, query, stream, prepare, connect, disconnect } from '../lib.mjs';
 
 const db = open('/tmp/test.db');
+const connection = db.connect();
 
-
-const connection = connect(db);
 const q = 'select i, i as a from generate_series(1, 100000) s(i)';
 
-const p = prepare(connection, q);
+const p = connection.prepare(q);
 console.log('benchmarking query: ' + q);
 
 bench('duckdb', () => {
@@ -15,4 +14,6 @@ bench('duckdb', () => {
 });
 
 await run({ percentiles: false });
-disconnect(connection); close(db);
+
+connection.close();
+db.close();

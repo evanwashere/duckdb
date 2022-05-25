@@ -16,7 +16,7 @@ class Database {
   }
 
   close() { lib.close(this.#ptr); db_gc.unregister(this); }
-  connect() { return new Connection(this.#ptr, lib.connect(this.#ptr)); }
+  connect() { return new Connection(this, lib.connect(this.#ptr)); }
 }
 
 class Connection {

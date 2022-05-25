@@ -1,5 +1,5 @@
 import { run, bench } from 'https://esm.sh/mitata';
-import { DB } from "https://deno.land/x/sqlite/mod.ts";
+import { DB } from 'https://deno.land/x/sqlite/mod.ts';
 
 const db = new DB('/tmp/test-lite.db');
 
@@ -12,7 +12,7 @@ WITH RECURSIVE c(x) AS (
 SELECT x, x as a FROM c;
 `);
 
-bench('sqlite', () => {
+bench('x/sqlite', () => {
   p.all();
 });
 

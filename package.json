@@ -1,8 +1,8 @@
 {
-  "version": "0.1.3",
+  "version": "0.1.4",
   "name": "@evan/duckdb",
   "license": "Apache-2.0",
-  "description": "lightning fast duckdb bindings for bun runtime",
+  "description": "fast duckdb bindings for bun runtime",
 
   "repository": {
     "type": "git",

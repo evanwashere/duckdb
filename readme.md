@@ -1,5 +1,5 @@
 <h1 align=center>@evan/duckdb</h1>
-<div align=center>lightning fast <a href=https://duckdb.org>duckdb</a> bindings for bun runtime</div>
+<div align=center>fast <a href=https://duckdb.org>duckdb</a> bindings for bun runtime</div>
 
 <br />
 

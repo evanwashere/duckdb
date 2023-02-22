@@ -1,5 +1,6 @@
 bin/
 .vscode/
+.DS_Store
 bun.lockb
 node_modules/
 package-lock.json
